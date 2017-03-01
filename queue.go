@@ -45,19 +45,19 @@ type Filter func(*Task) bool
 // a pool of workers.
 type Queue interface {
 	// Push pushes an task to the tail of this queue.
-	Push(c context.Context, task *Task)
+	Push(c context.Context, task *Task) error
 
 	// Poll retrieves and removes a task head of this queue.
-	Poll(c context.Context, f Filter) *Task
+	Poll(c context.Context, f Filter) (*Task, error)
 
 	// Extend extends the deadline for a task.
 	Extend(c context.Context, id string) error
 
 	// Done signals the task is complete.
-	Done(c context.Context, id string)
+	Done(c context.Context, id string) error
 
 	// Error signals the task is complete with errors.
-	Error(c context.Context, id string, err error)
+	Error(c context.Context, id string, err error) error
 
 	// Wait waits until the task is complete.
 	Wait(c context.Context, id string) error
@@ -75,12 +75,12 @@ func Set(queue Queue) {
 }
 
 // Push pushes an task to the tail of the global queue.
-func Push(c context.Context, task *Task) {
-	global.Push(c, task)
+func Push(c context.Context, task *Task) error {
+	return global.Push(c, task)
 }
 
 // Poll retrieves and removes a task head of the global queue.
-func Poll(c context.Context, f Filter) *Task {
+func Poll(c context.Context, f Filter) (*Task, error) {
 	return global.Poll(c, f)
 }
 
@@ -90,8 +90,8 @@ func Extend(c context.Context, id string) error {
 }
 
 // Done signals the task is complete.
-func Done(c context.Context, id string) {
-	global.Done(c, id)
+func Done(c context.Context, id string) error {
+	return global.Done(c, id)
 }
 
 // Error signals the task is complete with errors.

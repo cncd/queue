@@ -37,20 +37,21 @@ func New() Queue {
 		workers:   map[*worker]struct{}{},
 		running:   map[string]*entry{},
 		pending:   list.New(),
-		extension: time.Minute * 5,
+		extension: time.Minute * 10,
 	}
 }
 
 // Push pushes an item to the tail of this queue.
-func (q *fifo) Push(c context.Context, task *Task) {
+func (q *fifo) Push(c context.Context, task *Task) error {
 	q.Lock()
 	q.pending.PushBack(task)
 	q.Unlock()
 	go q.process()
+	return nil
 }
 
 // Poll retrieves and removes the head of this queue.
-func (q *fifo) Poll(c context.Context, f Filter) *Task {
+func (q *fifo) Poll(c context.Context, f Filter) (*Task, error) {
 	q.Lock()
 	w := &worker{
 		channel: make(chan *Task, 1),
@@ -66,20 +67,20 @@ func (q *fifo) Poll(c context.Context, f Filter) *Task {
 			q.Lock()
 			delete(q.workers, w)
 			q.Unlock()
-			return nil
-		case item := <-w.channel:
-			return item
+			return nil, nil
+		case t := <-w.channel:
+			return t, nil
 		}
 	}
 }
 
 // Done signals that the item is done executing.
-func (q *fifo) Done(c context.Context, id string) {
-	q.Error(c, id, nil)
+func (q *fifo) Done(c context.Context, id string) error {
+	return q.Error(c, id, nil)
 }
 
 // Error signals that the item is done executing with error.
-func (q *fifo) Error(c context.Context, id string, err error) {
+func (q *fifo) Error(c context.Context, id string, err error) error {
 	q.Lock()
 	state, ok := q.running[id]
 	if ok {
@@ -88,6 +89,7 @@ func (q *fifo) Error(c context.Context, id string, err error) {
 		delete(q.running, id)
 	}
 	q.Unlock()
+	return nil
 }
 
 // Wait waits until the item is done executing.

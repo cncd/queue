@@ -67,7 +67,7 @@ type Queue interface {
 }
 
 // global instance of the queue.
-var global Queue //= newQueue()
+var global = New()
 
 // Set sets the global queue.
 func Set(queue Queue) {

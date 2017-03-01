@@ -69,6 +69,15 @@ func (c *Client) Ack(ctx context.Context, project, subscription string, ids ...s
 	return c.do(ctx, uri, methodPost, req, nil)
 }
 
+// Extend extends the acknowledgement deadline for a specific message.
+func (c *Client) Extend(ctx context.Context, project, subscription string, id string, deadline int) error {
+	uri := fmt.Sprintf(endpointAckDeadline, project, subscription)
+	req := new(ackDeadlineRequest)
+	req.AckIDs = []string{id}
+	req.Deadline = deadline
+	return c.do(ctx, uri, methodPost, req, nil)
+}
+
 func (c *Client) do(ctx context.Context, rawurl, method string, in, out interface{}) error {
 	uri, uerr := url.Parse(rawurl)
 	if uerr != nil {

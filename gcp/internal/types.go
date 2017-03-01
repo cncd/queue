@@ -26,6 +26,11 @@ type (
 		AckIDs []string `json:"ackIds"`
 	}
 
+	ackDeadlineRequest struct {
+		AckIDs   []string `json:"ackIds"`
+		Deadline int      `json:"ackDeadlineSeconds"`
+	}
+
 	errorResponse struct {
 		Error *Error `json:"error"`
 	}

@@ -66,45 +66,45 @@ type Queue interface {
 	Info(c context.Context) InfoT
 }
 
-// global instance of the queue.
-var global = New()
-
-// Set sets the global queue.
-func Set(queue Queue) {
-	global = queue
-}
-
-// Push pushes an task to the tail of the global queue.
-func Push(c context.Context, task *Task) error {
-	return global.Push(c, task)
-}
-
-// Poll retrieves and removes a task head of the global queue.
-func Poll(c context.Context, f Filter) (*Task, error) {
-	return global.Poll(c, f)
-}
-
-// Extend extends the deadline for a task.
-func Extend(c context.Context, id string) error {
-	return global.Extend(c, id)
-}
-
-// Done signals the task is complete.
-func Done(c context.Context, id string) error {
-	return global.Done(c, id)
-}
-
-// Error signals the task is complete with errors.
-func Error(c context.Context, id string, err error) {
-	global.Error(c, id, err)
-}
-
-// Wait waits until the task is complete.
-func Wait(c context.Context, id string) error {
-	return global.Wait(c, id)
-}
-
-// Info returns internal queue information.
-func Info(c context.Context) InfoT {
-	return global.Info(c)
-}
+// // global instance of the queue.
+// var global = New()
+//
+// // Set sets the global queue.
+// func Set(queue Queue) {
+// 	global = queue
+// }
+//
+// // Push pushes an task to the tail of the global queue.
+// func Push(c context.Context, task *Task) error {
+// 	return global.Push(c, task)
+// }
+//
+// // Poll retrieves and removes a task head of the global queue.
+// func Poll(c context.Context, f Filter) (*Task, error) {
+// 	return global.Poll(c, f)
+// }
+//
+// // Extend extends the deadline for a task.
+// func Extend(c context.Context, id string) error {
+// 	return global.Extend(c, id)
+// }
+//
+// // Done signals the task is complete.
+// func Done(c context.Context, id string) error {
+// 	return global.Done(c, id)
+// }
+//
+// // Error signals the task is complete with errors.
+// func Error(c context.Context, id string, err error) {
+// 	global.Error(c, id, err)
+// }
+//
+// // Wait waits until the task is complete.
+// func Wait(c context.Context, id string) error {
+// 	return global.Wait(c, id)
+// }
+//
+// // Info returns internal queue information.
+// func Info(c context.Context) InfoT {
+// 	return global.Info(c)
+// }

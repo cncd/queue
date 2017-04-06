@@ -96,3 +96,24 @@ func TestFifoWait(t *testing.T) {
 	q.Done(noContext, got.ID)
 	wg.Wait()
 }
+
+func TestFifoEvict(t *testing.T) {
+	t1 := &Task{ID: "1"}
+
+	q := New()
+	q.Push(noContext, t1)
+	info := q.Info(noContext)
+	if len(info.Pending) != 1 {
+		t.Errorf("expect task in pending queue")
+	}
+	if err := q.Evict(noContext, t1.ID); err != nil {
+		t.Errorf("expect task evicted from queue")
+	}
+	info = q.Info(noContext)
+	if len(info.Pending) != 0 {
+		t.Errorf("expect pending queue has zero items")
+	}
+	if err := q.Evict(noContext, t1.ID); err != ErrNotFound {
+		t.Errorf("expect not found error when evicting item not in queue, got %s", err)
+	}
+}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-redis/redis"
+	"log"
 	"sync"
 	"time"
 
@@ -16,11 +18,11 @@ const POP_TIMEOUT = 0 // 0 == Blocking forever
 var ErrDeadLine = errors.New("queue: deadline received")
 
 type entry struct {
-	item     *queue.Task
-	done     chan bool
-	retry    int
-	error    error
-	deadline time.Time
+	Item     *queue.Task `json:"item"`
+	done     chan bool   `json:"done"`
+	Retry    int         `json:"retry"`
+	Error    error       `json:"error"`
+	Deadline time.Time   `json:"deadline"`
 }
 
 type conn struct {
@@ -37,20 +39,35 @@ func New(opts ...Option) (queue.Queue, error) {
 	// init running
 	conn.running = map[string]*entry{}
 	conn.extension = time.Minute * 10
-	// conn.extension = time.Second * 10
 
 	conn.opts = new(Options)
-	conn.opts.queueName = "task-queue"
+	conn.opts.hostIdentity = "host01"
+	conn.opts.penddingQueueName = "pendding-queue"
 	for _, opt := range opts {
 		opt(conn.opts)
 	}
 
 	conn.client = redis.NewClient(&redis.Options{
 		Addr:     conn.opts.addr,
-		Password: conn.opts.password, // no password set
-		DB:       conn.opts.db,       // use default DB
+		Password: conn.opts.password,
+		DB:       conn.opts.db,
 	})
 
+	runningQueueKey := fmt.Sprintf("%s:running:queue", conn.opts.hostIdentity)
+
+	allRunning, err := conn.client.HGetAll(runningQueueKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	for _, taskRaw := range allRunning {
+		runningTask := new(entry)
+		err = json.Unmarshal([]byte(taskRaw), runningTask)
+		if err != nil {
+			return nil, err
+		}
+		runningTask.done = make(chan bool)
+		conn.running[runningTask.Item.ID] = runningTask
+	}
 	return conn, nil
 }
 
@@ -61,7 +78,7 @@ func (c *conn) Push(ctx context.Context, task *queue.Task) error {
 	if err != nil {
 		return err
 	}
-	err = c.client.LPush(c.opts.queueName, taskRaw).Err()
+	err = c.client.LPush(c.opts.penddingQueueName, taskRaw).Err()
 	if err != nil {
 		return err
 	}
@@ -71,7 +88,7 @@ func (c *conn) Push(ctx context.Context, task *queue.Task) error {
 
 // 2. Undone list(Redis) => Task
 func (c *conn) Poll(ctx context.Context, f queue.Filter) (*queue.Task, error) {
-	result, err := c.client.BLPop(POP_TIMEOUT, c.opts.queueName).Result()
+	result, err := c.client.BRPop(POP_TIMEOUT, c.opts.penddingQueueName).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -83,9 +100,20 @@ func (c *conn) Poll(ctx context.Context, f queue.Filter) (*queue.Task, error) {
 		return nil, err
 	}
 	c.running[task.ID] = &entry{
-		item:     task,
+		Item:     task,
 		done:     make(chan bool),
-		deadline: time.Now().Add(c.extension),
+		Deadline: time.Now().Add(c.extension),
+	}
+
+	taskRaw, err := json.Marshal(c.running[task.ID])
+	if err != nil {
+		return nil, err
+	}
+	runningQueueKey := fmt.Sprintf("%s:running:queue", c.opts.hostIdentity)
+	runningTaskKey := fmt.Sprintf("running:task:%s", task.ID)
+	err = c.client.HSet(runningQueueKey, runningTaskKey, taskRaw).Err()
+	if err != nil {
+		return nil, err
 	}
 
 	go c.tracking()
@@ -99,7 +127,7 @@ func (c *conn) Extend(ctx context.Context, id string) error {
 
 	task, ok := c.running[id]
 	if ok {
-		task.deadline = time.Now().Add(c.extension)
+		task.Deadline = time.Now().Add(c.extension)
 		return nil
 	}
 	return queue.ErrNotFound
@@ -115,9 +143,10 @@ func (c *conn) Error(ctx context.Context, id string, err error) error {
 	c.Lock()
 	task, ok := c.running[id]
 	if ok {
-		task.error = err
+		task.Error = err
 		close(task.done)
 		delete(c.running, id)
+		c.deleteTaskFromRunningQueue(id)
 	}
 	c.Unlock()
 	return nil
@@ -138,7 +167,7 @@ func (c *conn) Wait(ctx context.Context, id string) error {
 		select {
 		case <-ctx.Done():
 		case <-task.done:
-			return task.error
+			return task.Error
 		}
 	}
 	return nil
@@ -150,7 +179,7 @@ func (c *conn) Info(ctx context.Context) queue.InfoT {
 	stats := queue.InfoT{}
 	stats.Stats.Running = len(c.running)
 	for _, entry := range c.running {
-		stats.Running = append(stats.Running, entry.item)
+		stats.Running = append(stats.Running, entry.Item)
 	}
 	c.Unlock()
 	return stats
@@ -164,10 +193,20 @@ func (c *conn) tracking() {
 	// TODO(bradrydzewski) move this to a helper function
 	// push items to the front of the queue if the item expires.
 	for id, task := range c.running {
-		if time.Now().After(task.deadline) {
-			task.error = ErrDeadLine
-			delete(c.running, id)
+		if time.Now().After(task.Deadline) {
+			task.Error = ErrDeadLine
 			close(task.done)
+			delete(c.running, id)
+			c.deleteTaskFromRunningQueue(id)
 		}
+	}
+}
+
+func (c *conn) deleteTaskFromRunningQueue(taskID string) {
+	runningQueueKey := fmt.Sprintf("%s:running:queue", c.opts.hostIdentity)
+	runningTaskKey := fmt.Sprintf("running:task:%s", taskID)
+	err := c.client.HDel(runningQueueKey, runningTaskKey).Err()
+	if err != nil {
+		log.Printf("queue: delete %s key %s error: %v\n", runningQueueKey, runningTaskKey, err)
 	}
 }

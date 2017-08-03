@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/go-redis/redis"
 	"log"
@@ -14,8 +13,6 @@ import (
 )
 
 const POP_TIMEOUT = 0 // 0 == Blocking forever
-
-var ErrDeadLine = errors.New("queue: deadline received")
 
 type entry struct {
 	Item     *queue.Task `json:"item"`
@@ -178,6 +175,8 @@ func (c *conn) Info(ctx context.Context) queue.InfoT {
 	c.Lock()
 	stats := queue.InfoT{}
 	stats.Stats.Running = len(c.running)
+	penddingLength, _ := c.client.LLen(c.opts.penddingQueueName).Result()
+	stats.Stats.Pending = int(penddingLength)
 	for _, entry := range c.running {
 		stats.Running = append(stats.Running, entry.Item)
 	}
@@ -194,7 +193,15 @@ func (c *conn) tracking() {
 	// push items to the front of the queue if the item expires.
 	for id, task := range c.running {
 		if time.Now().After(task.Deadline) {
-			task.Error = ErrDeadLine
+			taskRaw, err := json.Marshal(task.Item)
+			if err != nil {
+				log.Printf("re-added to pending queue error: %v \n", err)
+			}
+			err = c.client.LPush(c.opts.penddingQueueName, taskRaw).Err()
+			if err != nil {
+				log.Printf("re-added to pending queue error: %v \n", err)
+			}
+
 			close(task.done)
 			delete(c.running, id)
 			c.deleteTaskFromRunningQueue(id)
